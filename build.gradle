@@ -1,0 +1,19 @@
+// define plugins
+plugins {
+    id "com.github.johnrengelman.shadow" version "5.2.0"
+    id "java"
+}
+
+// initialize instance variables
+version = "0.1.0"
+
+// define repositories
+repositories {
+    mavenCentral()
+}
+
+// define dependencies
+dependencies {
+	compile "info.picocli:picocli:4.2.0"
+    compile "org.slf4j:slf4j-simple:1.7.25"
+}
