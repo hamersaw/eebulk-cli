@@ -13,20 +13,25 @@ import picocli.CommandLine.Parameters;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -169,8 +174,9 @@ public class Main implements Callable<Integer> {
             return 1;
         }
 
-        // list bulk orders
-        List<Integer> orders = new ArrayList();
+        // retrieve bulk order file lists
+        //List<Integer> orders = new ArrayList();
+        Map<Integer, JSONArray> orders = new HashMap();
         try {
             // initialize request
             JSONObject request = new JSONObject();
@@ -187,7 +193,19 @@ public class Main implements Callable<Integer> {
                 int orderId = order.getInt("orderId");
 
                 if (this.order == -1 || this.order == orderId) {
-                    orders.add(orderId);
+                    // initialize request
+                    JSONObject filesRequest = new JSONObject();
+                    filesRequest.put("requestType", REQ_FILE_LIST);
+                    filesRequest.put("message", ""); 
+                    filesRequest.put("orderId", orderId); 
+
+                    // send request
+                    JSONObject filesReply = send(filesRequest, out, in);
+                    
+                    // process files
+                    JSONArray filesArray =
+                        filesReply.getJSONArray("filelist");
+                    orders.put(orderId, filesArray);
                 }
             }
         } catch (IOException e) {
@@ -196,39 +214,95 @@ public class Main implements Callable<Integer> {
         }
 
         // process orders
-        for (int orderId : orders) {
-            logger.info("processing order '" + orderId + "'");
+        for (Map.Entry<Integer, JSONArray> order : orders.entrySet()) {
+            logger.info("processing order '" + order.getKey() + "'");
 
-            try {
-                // initialize request
-                JSONObject request = new JSONObject();
-                request.put("requestType", REQ_FILE_LIST);
-                request.put("message", ""); 
-                request.put("orderId", orderId); 
+            for (Object object : order.getValue()) {
+                JSONObject fileJSON = (JSONObject) object;
+                logger.info("processing file '"
+                    + fileJSON.get("entityId") + "'");
 
-                // send request
-                JSONObject reply = send(request, out, in);
-
-                // process files
-                JSONArray array = reply.getJSONArray("filelist");
-                for (Object object : array) {
-                    JSONObject file = (JSONObject) object;
-                    
+                try {
                     // initialize file request
-                    JSONObject fileRequest = new JSONObject();
-                    fileRequest.put("requestType", REQ_FILE);
-                    fileRequest.put("message", ""); 
-                    fileRequest.put("fileId", file.get("fileId")); 
+                    JSONObject request = new JSONObject();
+                    request.put("requestType", REQ_FILE);
+                    request.put("message", ""); 
+                    request.put("fileId", fileJSON.get("fileId")); 
 
                     // send request
-                    JSONObject fileReply = send(fileRequest, out, in);
+                    JSONObject reply = send(request, out, in);
 
-                    System.out.println("FILE: " + fileReply);
-                    return 0;
+                    // open file url connection
+                    logger.debug("connecting to url '"
+                        + reply.getString("url") + "'");
+
+                    URL url = new URL(reply.getString("url"));
+                    HttpsURLConnection connection =
+                        (HttpsURLConnection) url.openConnection();
+                    connection.setReadTimeout(300000);
+                    connection.setHostnameVerifier(
+                        new HostnameVerifier() {
+                        @Override
+                        public boolean verify(String hostName,
+                                SSLSession sslSession) {
+                            return true;
+                        }});
+
+                    connection.connect();
+
+                    // validate connection response
+                    if (connection.getResponseCode() != 200) {
+                        switch (connection.getResponseCode()) {
+                            case 403:
+                                logger.error("forbidden url");
+                                break;
+                            case 404:
+                                logger.error("url not found");
+                                break;
+                            default:
+                                logger.error("url unavailable");
+                                break;
+                        }
+
+                        continue;
+                    }
+
+                    long remainingLength = connection.getContentLength();
+
+                    if (fileJSON.getString("eula_code").length() > 0) {
+                        // TODO - download EULA.txt
+                    }
+
+                    // open output file
+                    File file = new File(this.directory + "/"
+                        + fileJSON.getString("entityId"));
+                    FileOutputStream fileOut = new FileOutputStream(file);
+
+                    // download data from connection
+                    byte[] buffer = new byte[8096];
+                    int bytesRead = 0;
+                    //System.out.print("reading file " + file + "\n: bytes");
+
+                    InputStream stream = connection.getInputStream();
+                    while (remainingLength > 0) {
+                        bytesRead = stream.read(buffer);
+                        fileOut.write(buffer, 0, bytesRead);
+
+                        //System.out.print(" " + bytesRead);
+                        remainingLength -= bytesRead;
+                    }
+                    //System.out.println("");
+
+                    // close file
+                    fileOut.close();
+
+                    // TODO - set file as 'DOWNLOADING'
+
+                    // TODO - set file as 'COMPLETED'
+                } catch (IOException e) {
+                    logger.error("file list failure: " + e);
+                    continue;
                 }
-            } catch (IOException e) {
-                logger.error("file list failure: " + e);
-                continue;
             }
         }
 
