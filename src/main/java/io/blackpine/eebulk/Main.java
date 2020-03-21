@@ -1,5 +1,6 @@
 package io.blackpine.eebulk;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import org.slf4j.Logger;
@@ -21,7 +22,9 @@ import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.Callable;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSocket;
@@ -34,6 +37,8 @@ public class Main implements Callable<Integer> {
         LoggerFactory.getLogger(Main.class);
 
     public static final int REQ_LOGIN = 2;
+    public static final int REQ_FILE_LIST = 3;
+    public static final int REQ_FILE = 4;
     public static final int REQ_ORDER_LIST = 7;
 
     @Parameters(index = "0", description = "EROS username")
@@ -149,27 +154,7 @@ public class Main implements Callable<Integer> {
             request.put("clientDetails", clientDetails);
 
             // send request
-            logger.debug("authentication request: " + request);
-            out.println(request.toString());
-            if (out.checkError()) {
-                throw new SSLException("Server was shut down");
-            }
-
-            // read reply
-            String jsonReply = in.readLine();
-            logger.debug("authentication reply: " + jsonReply);
-
-            if (jsonReply.equals("Bye")) {
-                logger.info("server dissconnected");
-                return 0;
-            }
-
-            JSONObject reply = new JSONObject(jsonReply);
-            // TODO - handle errorCode != 0
-            /*if (reply.has("errorCode")) {
-                logger.error("reply error code: " + reply.get("errorCode"));
-                return 1;
-            }*/
+            JSONObject reply = send(request, out, in);
 
             // process reply
             if (reply.has("authenticated")
@@ -180,11 +165,12 @@ public class Main implements Callable<Integer> {
                 return 1;
             }
         } catch (IOException e) {
-            logger.error("unknown authentication failure: " + e);
+            logger.error("authentication failure: " + e);
             return 1;
         }
 
         // list bulk orders
+        List<Integer> orders = new ArrayList();
         try {
             // initialize request
             JSONObject request = new JSONObject();
@@ -192,35 +178,58 @@ public class Main implements Callable<Integer> {
             request.put("message", ""); 
 
             // send request
-            logger.debug("bulk orders list request: " + request);
-            out.println(request.toString());
-            if (out.checkError()) {
-                throw new SSLException("Server was shut down");
+            JSONObject reply = send(request, out, in);
+
+            // process orders
+            JSONArray array = reply.getJSONArray("orders");
+            for (Object object : array) {
+                JSONObject order = (JSONObject) object;
+                int orderId = order.getInt("orderId");
+
+                if (this.order == -1 || this.order == orderId) {
+                    orders.add(orderId);
+                }
             }
-
-            // read reply
-            String jsonReply = in.readLine();
-            logger.debug("bulk orders list reply: " + jsonReply);
-
-            if (jsonReply.equals("Bye")) {
-                logger.info("server dissconnected");
-                return 0;
-            }
-
-            JSONObject reply = new JSONObject(jsonReply);
-            // TODO - handle errorCode != 0
-            /*if (reply.has("errorCode")) {
-                logger.error("reply error code: " + reply.get("errorCode"));
-                return 1;
-            }*/
-
-            logger.trace("authentication response: " + reply);
-
-            // TODO - process orders
-            System.out.println(jsonReply);
         } catch (IOException e) {
-            logger.error("unknown authentication failure: " + e);
+            logger.error("bulk orders list failure: " + e);
             return 1;
+        }
+
+        // process orders
+        for (int orderId : orders) {
+            logger.info("processing order '" + orderId + "'");
+
+            try {
+                // initialize request
+                JSONObject request = new JSONObject();
+                request.put("requestType", REQ_FILE_LIST);
+                request.put("message", ""); 
+                request.put("orderId", orderId); 
+
+                // send request
+                JSONObject reply = send(request, out, in);
+
+                // process files
+                JSONArray array = reply.getJSONArray("filelist");
+                for (Object object : array) {
+                    JSONObject file = (JSONObject) object;
+                    
+                    // initialize file request
+                    JSONObject fileRequest = new JSONObject();
+                    fileRequest.put("requestType", REQ_FILE);
+                    fileRequest.put("message", ""); 
+                    fileRequest.put("fileId", file.get("fileId")); 
+
+                    // send request
+                    JSONObject fileReply = send(fileRequest, out, in);
+
+                    System.out.println("FILE: " + fileReply);
+                    return 0;
+                }
+            } catch (IOException e) {
+                logger.error("file list failure: " + e);
+                continue;
+            }
         }
 
         // disconnect ssl socket
@@ -229,11 +238,39 @@ public class Main implements Callable<Integer> {
             in.close();
             socket.close();
         } catch (IOException e) {
-            logger.error("unknown ssl socket close failure: " + e);
+            logger.error("ssl socket close failure: " + e);
             return 1;
         } 
 
         // return success
 		return 0;
 	}
+
+    protected static JSONObject send(JSONObject request,
+            PrintWriter out, BufferedReader in) throws Exception {
+        // send request
+        logger.trace("request: " + request);
+        out.println(request.toString());
+
+        if (out.checkError()) {
+            throw new SSLException("server was shut down");
+        }
+
+        // read reply
+        String jsonReply = in.readLine();
+        logger.trace("authentication reply: " + jsonReply);
+
+        if (jsonReply.equals("Bye")) {
+            throw new Exception("SSL socket shudown");
+        }
+
+        JSONObject reply = new JSONObject(jsonReply);
+        // TODO - handle errorCode != 0
+        /*if (reply.has("errorCode")) {
+            logger.error("reply error code: " + reply.get("errorCode"));
+            return 1;
+        }*/
+
+        return reply;
+    }
 }
