@@ -240,13 +240,6 @@ public class Main implements Callable<Integer> {
                     HttpsURLConnection connection =
                         (HttpsURLConnection) url.openConnection();
                     connection.setReadTimeout(300000);
-                    connection.setHostnameVerifier(
-                        new HostnameVerifier() {
-                        @Override
-                        public boolean verify(String hostName,
-                                SSLSession sslSession) {
-                            return true;
-                        }});
 
                     connection.connect();
 
