@@ -44,7 +44,12 @@ public class Main implements Callable<Integer> {
     public static final int REQ_LOGIN = 2;
     public static final int REQ_FILE_LIST = 3;
     public static final int REQ_FILE = 4;
+    public static final int REQ_FILE_STATUS = 5;
     public static final int REQ_ORDER_LIST = 7;
+
+    public static final int STATUS_DOWNLOADING = 0;
+    public static final int STATUS_COMPLETE = 2;
+    public static final int STATUS_QUEUED = 5;
 
     @Parameters(index = "0", description = "EROS username")
 	private String username;
@@ -179,7 +184,6 @@ public class Main implements Callable<Integer> {
         }
 
         // retrieve bulk order file lists
-        //List<Integer> orders = new ArrayList();
         Map<Integer, JSONArray> orders = new HashMap();
         try {
             // initialize request

@@ -41,18 +41,30 @@ public class DownloadManager {
         this.out = out;
 
         this.semaphore = new Semaphore(1);
-        this.queue = new ArrayBlockingQueue(8096);
+        this.queue = new ArrayBlockingQueue(256);
         this.threads = new ArrayList();
     }
 
-    public void add(JSONObject json) {
+    public void add(JSONObject json) throws InterruptedException, IOException {
         while (!this.queue.offer(json)) {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                // TODO - log
-                break;
-            }
+            Thread.sleep(50);
+        }
+
+        // set file status to 'COMPLETE'
+        semaphore.acquire();
+        try {
+            // initialize file request
+            JSONObject request = new JSONObject();
+            request.put("requestType", Main.REQ_FILE_STATUS);
+            request.put("message", ""); 
+            request.put("type", "set"); 
+            request.put("status", Main.STATUS_QUEUED); 
+            request.put("fileId", json.get("fileId")); 
+
+            // send request
+            Main.send(request, out, in);
+        } finally {
+            semaphore.release();
         }
     }
 
@@ -166,7 +178,22 @@ public class DownloadManager {
                         + fileJSON.getString("entityId"));
                     FileOutputStream fileOut = new FileOutputStream(file);
 
-                    // TODO - set file as 'DOWNLOADING'
+                    // set file status to 'DOWNLOADING'
+                    semaphore.acquire();
+                    try {
+                        // initialize file request
+                        JSONObject request = new JSONObject();
+                        request.put("requestType", Main.REQ_FILE_STATUS);
+                        request.put("message", ""); 
+                        request.put("type", "set"); 
+                        request.put("status", Main.STATUS_DOWNLOADING); 
+                        request.put("fileId", fileJSON.get("fileId")); 
+
+                        // send request
+                        Main.send(request, out, in);
+                    } finally {
+                        semaphore.release();
+                    }
 
                     // download data from connection
                     byte[] buffer = new byte[8096];
@@ -186,7 +213,22 @@ public class DownloadManager {
                     logger.debug("downloaded url '"
                         + reply.getString("url") + "'");
 
-                    // TODO - set file as 'COMPLETED'
+                    // set file status to 'COMPLETE'
+                    semaphore.acquire();
+                    try {
+                        // initialize file request
+                        JSONObject request = new JSONObject();
+                        request.put("requestType", Main.REQ_FILE_STATUS);
+                        request.put("message", ""); 
+                        request.put("type", "set"); 
+                        request.put("status", Main.STATUS_COMPLETE); 
+                        request.put("fileId", fileJSON.get("fileId")); 
+
+                        // send request
+                        Main.send(request, out, in);
+                    } finally {
+                        semaphore.release();
+                    }
                 } catch (InterruptedException e) {
                     logger.error("interrupted: " + e);
                     break;
