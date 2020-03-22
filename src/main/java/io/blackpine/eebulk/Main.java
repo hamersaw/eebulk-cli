@@ -68,6 +68,10 @@ public class Main implements Callable<Integer> {
         description = "API port [default: 4448]")
     private int port = 4448;
 
+    @Option(names = {"-t", "--threads"},
+        description = "Download thread count [default: 4]")
+    private short threadCount = 4;
+
     public static void main(String[] args) {
         int exitCode = new CommandLine(new Main()).execute(args);
         System.exit(exitCode);
@@ -217,86 +221,20 @@ public class Main implements Callable<Integer> {
         for (Map.Entry<Integer, JSONArray> order : orders.entrySet()) {
             logger.info("processing order '" + order.getKey() + "'");
 
+            // initialize and start a download manager instance
+            DownloadManager downloadManager =
+                new DownloadManager(this.directory, this.threadCount, in, out);
+            downloadManager.start();
+
+            // add files to download manager
             for (Object object : order.getValue()) {
                 JSONObject fileJSON = (JSONObject) object;
-                logger.info("processing file '"
-                    + fileJSON.get("entityId") + "'");
 
-                try {
-                    // initialize file request
-                    JSONObject request = new JSONObject();
-                    request.put("requestType", REQ_FILE);
-                    request.put("message", ""); 
-                    request.put("fileId", fileJSON.get("fileId")); 
-
-                    // send request
-                    JSONObject reply = send(request, out, in);
-
-                    // open file url connection
-                    logger.debug("connecting to url '"
-                        + reply.getString("url") + "'");
-
-                    URL url = new URL(reply.getString("url"));
-                    HttpsURLConnection connection =
-                        (HttpsURLConnection) url.openConnection();
-                    connection.setReadTimeout(300000);
-
-                    connection.connect();
-
-                    // validate connection response
-                    if (connection.getResponseCode() != 200) {
-                        switch (connection.getResponseCode()) {
-                            case 403:
-                                logger.error("forbidden url");
-                                break;
-                            case 404:
-                                logger.error("url not found");
-                                break;
-                            default:
-                                logger.error("url unavailable");
-                                break;
-                        }
-
-                        continue;
-                    }
-
-                    long remainingLength = connection.getContentLength();
-
-                    if (fileJSON.getString("eula_code").length() > 0) {
-                        // TODO - download EULA.txt
-                    }
-
-                    // open output file
-                    File file = new File(this.directory + "/"
-                        + fileJSON.getString("entityId"));
-                    FileOutputStream fileOut = new FileOutputStream(file);
-
-                    // download data from connection
-                    byte[] buffer = new byte[8096];
-                    int bytesRead = 0;
-                    //System.out.print("reading file " + file + "\n: bytes");
-
-                    InputStream stream = connection.getInputStream();
-                    while (remainingLength > 0) {
-                        bytesRead = stream.read(buffer);
-                        fileOut.write(buffer, 0, bytesRead);
-
-                        //System.out.print(" " + bytesRead);
-                        remainingLength -= bytesRead;
-                    }
-                    //System.out.println("");
-
-                    // close file
-                    fileOut.close();
-
-                    // TODO - set file as 'DOWNLOADING'
-
-                    // TODO - set file as 'COMPLETED'
-                } catch (IOException e) {
-                    logger.error("file list failure: " + e);
-                    continue;
-                }
+                downloadManager.add(fileJSON);
             }
+
+            // stop and wait for downloads to finish
+            downloadManager.stop();
         }
 
         // disconnect ssl socket
@@ -314,7 +252,7 @@ public class Main implements Callable<Integer> {
 	}
 
     protected static JSONObject send(JSONObject request,
-            PrintWriter out, BufferedReader in) throws Exception {
+            PrintWriter out, BufferedReader in) throws IOException {
         // send request
         logger.trace("request: " + request);
         out.println(request.toString());
@@ -328,7 +266,7 @@ public class Main implements Callable<Integer> {
         logger.trace("authentication reply: " + jsonReply);
 
         if (jsonReply.equals("Bye")) {
-            throw new Exception("SSL socket shudown");
+            throw new IOException("SSL socket shudown");
         }
 
         JSONObject reply = new JSONObject(jsonReply);
