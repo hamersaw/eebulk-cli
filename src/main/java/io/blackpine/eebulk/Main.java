@@ -52,6 +52,10 @@ public class Main implements Callable<Integer> {
     @Parameters(index = "1", description = "EROS password")
     private String password;
 
+    @Option(names = {"-c", "--curl"},
+        description = "Download files using curl")
+    private boolean curl;
+
     @Option(names = {"-d", "--directory"},
         description = "Storage directory [default: 'data']")
     private File directory = new File("data/");
@@ -71,10 +75,6 @@ public class Main implements Callable<Integer> {
     @Option(names = {"-t", "--threads"},
         description = "Download thread count [default: 1]")
     private short threadCount = 1;
-
-    @Option(names = {"-w", "--wget"},
-        description = "Download files using wget")
-    private boolean wget;
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new Main()).execute(args);
@@ -222,8 +222,8 @@ public class Main implements Callable<Integer> {
 
         // initialize Downloader
         Downloader downloader = null;
-        if (this.wget) {
-            downloader = new WgetDownloader();
+        if (this.curl) {
+            downloader = new CurlDownloader();
         } else {
             downloader = new JavaSSLDownloader();
         }

@@ -6,13 +6,14 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.lang.InterruptedException;
 import java.net.URL;
 import javax.net.ssl.HttpsURLConnection;
 
 public class JavaSSLDownloader implements Downloader {
     @Override
-    public void process(JSONObject listJSON,
-            JSONObject fileJSON, File directory) throws IOException {
+    public void process(JSONObject listJSON, JSONObject fileJSON,
+            File directory) throws InterruptedException, IOException {
         // connect to url
         URL url = new URL(fileJSON.getString("url"));
         HttpsURLConnection connection =
