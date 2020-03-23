@@ -74,8 +74,8 @@ public class Main implements Callable<Integer> {
     private int port = 4448;
 
     @Option(names = {"-t", "--threads"},
-        description = "Download thread count [default: 4]")
-    private short threadCount = 4;
+        description = "Download thread count [default: 1]")
+    private short threadCount = 1;
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new Main()).execute(args);
@@ -230,11 +230,14 @@ public class Main implements Callable<Integer> {
                 new DownloadManager(this.directory, this.threadCount, in, out);
             downloadManager.start();
 
-            // add files to download manager
+            // iterate over bulk order files
             for (Object object : order.getValue()) {
                 JSONObject fileJSON = (JSONObject) object;
 
-                downloadManager.add(fileJSON);
+                // if file is not complete - queue to download
+                if (fileJSON.getInt("status") != Main.STATUS_COMPLETE) {
+                    downloadManager.add(fileJSON);
+                }
             }
 
             // stop and wait for downloads to finish

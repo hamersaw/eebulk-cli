@@ -41,7 +41,7 @@ public class DownloadManager {
         this.out = out;
 
         this.semaphore = new Semaphore(1);
-        this.queue = new ArrayBlockingQueue(256);
+        this.queue = new ArrayBlockingQueue(16);
         this.threads = new ArrayList();
     }
 
@@ -50,7 +50,7 @@ public class DownloadManager {
             Thread.sleep(50);
         }
 
-        // set file status to 'COMPLETE'
+        // set file status to 'QUEUED'
         semaphore.acquire();
         try {
             // initialize file request
@@ -90,7 +90,7 @@ public class DownloadManager {
                 try {
                     Thread.sleep(50);
                 } catch (InterruptedException e) {
-                    // TODO - log
+                    log.warn("failed to add poison pill: " + e);
                     break;
                 }
             }
@@ -101,7 +101,7 @@ public class DownloadManager {
             try {
                 thread.join();
             } catch (InterruptedException e) {
-                // TODO - log
+                log.warn("failed to join download thread: " + e);
                 break;
             }
         }
