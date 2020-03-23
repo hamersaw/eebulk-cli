@@ -72,6 +72,10 @@ public class Main implements Callable<Integer> {
         description = "Download thread count [default: 1]")
     private short threadCount = 1;
 
+    @Option(names = {"-w", "--wget"},
+        description = "Download files using wget")
+    private boolean wget;
+
     public static void main(String[] args) {
         int exitCode = new CommandLine(new Main()).execute(args);
         System.exit(exitCode);
@@ -216,13 +220,21 @@ public class Main implements Callable<Integer> {
             return 1;
         }
 
+        // initialize Downloader
+        Downloader downloader = null;
+        if (this.wget) {
+            downloader = new WgetDownloader();
+        } else {
+            downloader = new JavaSSLDownloader();
+        }
+
         // process orders
         for (Map.Entry<Integer, JSONArray> order : orders.entrySet()) {
             logger.info("processing order '" + order.getKey() + "'");
 
             // initialize and start a download manager instance
-            DownloadManager downloadManager =
-                new DownloadManager(this.directory, this.threadCount, in, out);
+            DownloadManager downloadManager = new DownloadManager(
+                downloader, this.directory, this.threadCount, in, out);
             downloadManager.start();
 
             // iterate over bulk order files

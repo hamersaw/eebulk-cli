@@ -24,6 +24,7 @@ public class DownloadManager {
     private static final Logger logger =
         LoggerFactory.getLogger(DownloadManager.class);
 
+    protected Downloader downloader;
     protected File directory;
     protected short threadCount;
     protected BufferedReader in;
@@ -33,8 +34,9 @@ public class DownloadManager {
     protected ArrayBlockingQueue<JSONObject> queue;
     protected List<Thread> threads;
 
-    public DownloadManager(File directory, short threadCount,
-            BufferedReader in, PrintWriter out) {
+    public DownloadManager(Downloader downloader, File directory,
+            short threadCount, BufferedReader in, PrintWriter out) {
+        this.downloader = downloader;
         this.directory = directory;
         this.threadCount = threadCount;
         this.in = in;
@@ -139,44 +141,8 @@ public class DownloadManager {
                         semaphore.release();
                     }
 
-                    // open file url connection
-                    logger.debug("connecting to url '"
+                    logger.info("processing url '"
                         + reply.getString("url") + "'");
-
-                    URL url = new URL(reply.getString("url"));
-                    HttpsURLConnection connection =
-                        (HttpsURLConnection) url.openConnection();
-                    connection.setReadTimeout(300000);
-
-                    connection.connect();
-
-                    // validate connection response
-                    if (connection.getResponseCode() != 200) {
-                        switch (connection.getResponseCode()) {
-                            case 403:
-                                logger.error("forbidden url");
-                                break;
-                            case 404:
-                                logger.error("url not found");
-                                break;
-                            default:
-                                logger.error("url unavailable");
-                                break;
-                        }
-
-                        continue;
-                    }
-
-                    long remainingLength = connection.getContentLength();
-
-                    if (fileJSON.getString("eula_code").length() > 0) {
-                        // TODO - download EULA.txt
-                    }
-
-                    // open output file
-                    File file = new File(directory + "/"
-                        + fileJSON.getString("entityId"));
-                    FileOutputStream fileOut = new FileOutputStream(file);
 
                     // set file status to 'DOWNLOADING'
                     semaphore.acquire();
@@ -195,23 +161,11 @@ public class DownloadManager {
                         semaphore.release();
                     }
 
-                    // download data from connection
-                    byte[] buffer = new byte[8096];
-                    int bytesRead = 0;
+                    // download
+                    downloader.process(fileJSON, reply, directory);
 
-                    InputStream stream = connection.getInputStream();
-                    while (remainingLength > 0) {
-                        bytesRead = stream.read(buffer);
-                        fileOut.write(buffer, 0, bytesRead);
-
-                        remainingLength -= bytesRead;
-                    }
-
-                    // close file
-                    fileOut.close();
-
-                    logger.debug("downloaded url '"
-                        + reply.getString("url") + "'");
+                    //logger.debug("downloaded url '"
+                    //    + reply.getString("url") + "'");
 
                     // set file status to 'COMPLETE'
                     semaphore.acquire();
