@@ -90,7 +90,7 @@ public class DownloadManager {
                 try {
                     Thread.sleep(50);
                 } catch (InterruptedException e) {
-                    log.warn("failed to add poison pill: " + e);
+                    logger.warn("failed to add poison pill: " + e);
                     break;
                 }
             }
@@ -101,7 +101,7 @@ public class DownloadManager {
             try {
                 thread.join();
             } catch (InterruptedException e) {
-                log.warn("failed to join download thread: " + e);
+                logger.warn("failed to join download thread: " + e);
                 break;
             }
         }
