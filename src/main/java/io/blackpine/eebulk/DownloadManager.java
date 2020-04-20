@@ -141,6 +141,11 @@ public class DownloadManager {
                         semaphore.release();
                     }
 
+                    // check if url is valid
+                    if (reply.getString("url").equals("")) {
+                        continue;
+                    }
+
                     logger.info("processing url '"
                         + reply.getString("url") + "'");
 
